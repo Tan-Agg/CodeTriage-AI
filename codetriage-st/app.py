@@ -7,9 +7,10 @@ import pandas as pd
 import os
 import requests
 from urllib.parse import urlparse
+import math
 
 st.set_page_config(page_title="CodeTriage AI", layout="wide")
-
+PER_PAGE = 20
 def parse_owner_repo(url: str):
     try:
         path = urlparse(url).path.strip("/")
@@ -18,10 +19,18 @@ def parse_owner_repo(url: str):
     except:
         return None, None
     
+def get_total_open_issues(owner, repo):
+    url = f"https://api.github.com/repos/{owner}/{repo}"
+    resp = requests.get(url)
+    if resp.status_code == 200:
+        data = resp.json()
+        return data.get("open_issues_count", 0)
+    return 0
+
 def fetch_issues(owner, repo, page):
     headers = {}
     # (optionally add your token here)
-    params = {"state": "all", "per_page": 30, "page": page}
+    params = {"state": "open", "per_page": PER_PAGE, "page": page}
     resp = requests.get(
         f"https://api.github.com/repos/{owner}/{repo}/issues",
         params=params,
@@ -66,13 +75,36 @@ else:
         st.table(df)
 
     # pagination controls
-    prev, _ , nxt = st.columns([1,8,1])
+    total_issues = get_total_open_issues(owner, repo)
+    total_pages = (total_issues + PER_PAGE - 1) // PER_PAGE
+
+    start_page = max(1, page - 4)
+    end_page = min(total_pages, start_page + 9)
+    start_page = max(1, end_page - 9)
+
+    prev, _ ,  pages_col , _ , nxt = st.columns([1, 4, 8, 4, 1])
+
     with prev:
-        if st.button("<- Previous") and page > 1:
+        if st.button("<- Prev") and page > 1:
             st.session_state.page -= 1
             st.rerun()
+
+    with pages_col:
+        num_page_buttons = end_page - start_page + 1
+        if num_page_buttons > 0:
+            pagination_cols = st.columns(num_page_buttons)
+            for idx, i in enumerate(range(start_page, end_page + 1)):
+                button_label = f"**{i}**" if i == page else str(i)
+                with pagination_cols[idx]:
+                    if st.button(button_label, key=f"page_{i}"):
+                        st.session_state.page = i
+                        st.rerun()
+        else:
+            st.write("No pages to display.")
+
+    
     with nxt:
-        if st.button("Next ->") and issues:
+        if st.button("Next ->") and page < total_pages:
             st.session_state.page += 1
             st.rerun()
     
